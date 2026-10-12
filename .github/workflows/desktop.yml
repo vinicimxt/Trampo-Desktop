@@ -1,0 +1,23 @@
+name: Desktop Windows
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Restore
+        run: dotnet restore Trampo.Desktop.slnx
+      - name: Build
+        run: dotnet build Trampo.Desktop.slnx --configuration Release --no-restore
+      - name: Non-visual tests
+        run: dotnet run --project Tests/Trampo.Desktop.Tests/Trampo.Desktop.Tests.csproj --configuration Release --no-build

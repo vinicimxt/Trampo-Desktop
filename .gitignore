@@ -1,0 +1,26 @@
+# Visual Studio / MSBuild
+.vs/
+**/bin/
+**/obj/
+*.user
+*.suo
+*.lscache
+
+# Resultados, logs e tempor?rios
+TestResults/
+artifacts/
+coverage/
+*.log
+*.tmp
+*.temp
+*.bak
+
+# Configura??o local e material de assinatura
+.env
+.env.*
+!.env.example
+appsettings.Local.json
+secrets.json
+*.pfx
+*.p12
+*.key
