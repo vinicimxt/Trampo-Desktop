@@ -21,7 +21,7 @@ public partial class LoginForm : Form
 
     private void BuildUi()
     {
-        Text = "TRAMPO | Acesso profissional";
+        Text = "TRAMPO | Acesso Cliente e Profissional";
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(820, 510);
         ClientSize = new Size(940, 560);
@@ -52,7 +52,7 @@ public partial class LoginForm : Form
         });
         brand.Controls.Add(new Label
         {
-            Text = "Seu espaço de trabalho,\nconectado aos seus clientes.",
+            Text = "Serviços e oportunidades\nem um só lugar.",
             ForeColor = Color.FromArgb(199, 200, 222),
             Font = new Font("Segoe UI", 12),
             AutoSize = true,
@@ -77,7 +77,7 @@ public partial class LoginForm : Form
         });
         card.Controls.Add(new Label
         {
-            Text = "Área exclusiva para profissionais",
+            Text = "Entre como Cliente ou Profissional",
             ForeColor = Color.FromArgb(107, 111, 132),
             AutoSize = true,
             Location = new Point(2, 52)
@@ -146,7 +146,7 @@ public partial class LoginForm : Form
         _status.Text = "Validando acesso...";
         try
         {
-            var session = await _api.SignInProfessionalAsync(email, senha);
+            var session = await _api.SignInAsync(email, senha);
             if (IsDisposed)
             {
                 session.Clear();
@@ -156,7 +156,9 @@ public partial class LoginForm : Form
             Hide();
             try
             {
-                using var main = new MainForm(session, _api);
+                using Form main = string.Equals(session.Perfil, "cliente", StringComparison.OrdinalIgnoreCase)
+                    ? new ClienteMainForm(session, _api)
+                    : new MainForm(session, _api);
                 main.ShowDialog(this);
             }
             finally

@@ -22,4 +22,9 @@ internal sealed class UserSession
         Nome = string.Empty;
         Perfil = string.Empty;
     }
+
+    public void UpdateName(string nome)
+    {
+        if (!string.IsNullOrWhiteSpace(Jwt)) Nome = nome;
+    }
 }

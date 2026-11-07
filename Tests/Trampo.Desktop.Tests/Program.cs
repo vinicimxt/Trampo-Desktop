@@ -367,6 +367,221 @@ using (var client = Client((_, _) => throw new TaskCanceledException()))
     try { await client.BuscarCepAsync(Session(), "01001000"); throw new Exception("Timeout CEP aceito"); }
     catch (ApiException ex) { Check(ex.Message.Contains("demorou"), "CEP timeout tratado"); }
 }
+UserSession ClientSession()
+{
+    var clientSession = new UserSession();
+    clientSession.Start("jwt-cliente", 11, "Maria", "cliente");
+    return clientSession;
+}
+const string bookingJson = """{"id":12,"servicoId":215,"profissionalId":9,"data":"2026-11-10","hora":"10:00:00","status":"Pendente","descricao":"Teste","enderecoCliente":null,"valorFinal":null,"origemValorFinal":"finalizacao_sem_snapshot_da_oferta","enderecoAtendimento":null,"servicoNome":"Design de landing page","profissionalNome":"Ana","atendimento":"Online"}""";
+foreach (var (profile, accepted) in new[] { ("cliente", true), ("profissional", true), ("admin", false) })
+{
+    var calls = 0;
+    using var client = Client((request, _) =>
+    {
+        calls++;
+        if (calls == 1)
+        {
+            Check(request.RequestUri?.AbsolutePath == "/api/v1/auth/login" &&
+                request.Headers.Authorization is null, "login sem token anterior");
+            return Task.FromResult(Response(HttpStatusCode.OK,
+                """{"accessToken":"jwt-novo","tokenType":"Bearer","expiresAt":"2026-11-10T12:00:00Z"}"""));
+        }
+        Check(request.RequestUri?.AbsolutePath == "/api/v1/auth/me" &&
+            request.Headers.Authorization?.Parameter == "jwt-novo", "perfil consultado com token novo");
+        return Task.FromResult(Response(HttpStatusCode.OK,
+            $"{{\"id\":11,\"nome\":\"Maria\",\"email\":\"m@example.invalid\",\"tipo\":\"{profile}\"}}"));
+    });
+    if (accepted)
+    {
+        var logged = await client.SignInAsync("m@example.invalid", "senha-ficticia");
+        Check(logged.Perfil == profile && logged.Jwt == "jwt-novo", "login multiperfil: " + profile);
+    }
+    else
+    {
+        try { await client.SignInAsync("m@example.invalid", "senha-ficticia"); throw new Exception("Admin aceito"); }
+        catch (ApiException ex) { Check(ex.Message.Contains("aplicação Web"), "Admin direcionado para Web"); }
+    }
+}
+var cliente = ClientSession();
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/servicos" &&
+        request.RequestUri?.Query.Contains("categoriaId=2") == true &&
+        request.RequestUri?.Query.Contains("subcategoriaId=3") == true &&
+        request.RequestUri?.Query.Contains("profissional=Ana") == true &&
+        request.Headers.Authorization is null, "busca pública envia filtros reais");
+    return Task.FromResult(Response(HttpStatusCode.OK,
+        """[{"id":215,"profissionalId":9,"subcategoriaId":3,"nome":"Design de landing page","descricao":"Site","atendimento":"Online","tipoPreco":"Fixo","precoBase":234.00,"ativo":true,"nomeProfissional":"Ana","categoria":"Marketing","subcategoria":"Design"}]"""));
+}))
+    Check((await client.BuscarServicosAsync(1, "Design", "Online", 2, 3, "Ana")).Single().Nome ==
+        "Design de landing page", "catálogo exibe nome real");
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/servicos/215/agenda" &&
+        request.RequestUri.Query.Contains("data=2026-11-10") &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "agenda usa JWT e data ISO");
+    return Task.FromResult(Response(HttpStatusCode.OK,
+        """{"servicoId":215,"data":"2026-11-10","horarios":["10:00:00"]}"""));
+}))
+    Check((await client.ConsultarAgendaAsync(cliente, 215, new DateOnly(2026, 11, 10))).Horarios.Single() ==
+        TimeSpan.FromHours(10), "horário vem da API");
+using (var client = Client(async (request, _) =>
+{
+    using var payload = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/api/v1/agendamentos" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt &&
+        payload.RootElement.GetProperty("servicoId").GetInt32() == 215 &&
+        !payload.RootElement.TryGetProperty("clienteId", out var ignoredClientId) &&
+        !payload.RootElement.TryGetProperty("profissionalId", out var ignoredProfessionalId),
+        "criação usa JWT sem IDs de ownership");
+    return Response(HttpStatusCode.Created, "{\"id\":12}");
+}))
+    Check(await client.CriarAgendamentoAsync(cliente, new CriarAgendamentoRequest(215,
+        new DateOnly(2026, 11, 10), TimeSpan.FromHours(10), "Teste", null)) == 12,
+        "criação exige 201 e ID");
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.PathAndQuery == "/api/v1/agendamentos?visao=meus" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "lista Cliente usa visão meus");
+    return Task.FromResult(Response(HttpStatusCode.OK, "[" + bookingJson + "]"));
+}))
+    Check((await client.GetMeusAgendamentosAsync(cliente)).Single().ServicoNome ==
+        "Design de landing page", "lista Cliente lê nome e profissional");
+foreach (var (action, invoke) in new (string, Func<TrampoApiClient, Task>)[]
+{
+    ("cancelar", c => c.CancelarAgendamentoAsync(cliente, 12)),
+    ("confirmar-conclusao", c => c.ConfirmarConclusaoAsync(cliente, 12))
+})
+{
+    using var client = Client((request, _) =>
+    {
+        Check(request.RequestUri?.AbsolutePath == $"/api/v1/agendamentos/12/{action}" &&
+            request.Method == HttpMethod.Post && request.Headers.Authorization?.Parameter == cliente.Jwt,
+            "ação Cliente: " + action);
+        return Task.FromResult(Response(HttpStatusCode.NoContent));
+    });
+    await invoke(client);
+}
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/agendamentos/12/avaliacao" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "avaliação consulta estado com JWT");
+    return Task.FromResult(Response(HttpStatusCode.OK, "{\"podeAvaliar\":true,\"jaAvaliado\":false}"));
+}))
+    Check((await client.EstadoAvaliacaoAsync(cliente, 12)).PodeAvaliar, "avaliação usa autorização da API");
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/perfil" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "perfil Cliente usa JWT");
+    return Task.FromResult(Response(HttpStatusCode.OK,
+        "{\"nome\":\"Maria\",\"email\":\"m@example.invalid\",\"telefone\":null}"));
+}))
+    Check((await client.GetPerfilAsync(cliente)).Nome == "Maria", "perfil Cliente desserializado");
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/notificacoes" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "notificações do usuário autenticado");
+    return Task.FromResult(Response(HttpStatusCode.OK, "[]"));
+}))
+    Check((await client.GetNotificacoesAsync(cliente)).Count == 0, "notificações vazias");
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/suporte" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "suporte do usuário autenticado");
+    return Task.FromResult(Response(HttpStatusCode.OK, "[]"));
+}))
+    Check((await client.GetChamadosAsync(cliente)).Count == 0, "suporte vazio");
+foreach (var status in new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden })
+{
+    var restricted = ClientSession();
+    using var client = Client((_, _) => Task.FromResult(Response(status)));
+    try { await client.GetMeusAgendamentosAsync(restricted); throw new Exception("Acesso indevido"); }
+    catch (ApiException ex)
+    {
+        Check(ex.StatusCode == status && (status == HttpStatusCode.Unauthorized ? restricted.Jwt == "" :
+            restricted.Jwt == "jwt-cliente"), $"Cliente HTTP {(int)status} tratado");
+    }
+}
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/servicos/215" &&
+        request.Headers.Authorization is null, "detalhe público do serviço");
+    return Task.FromResult(Response(HttpStatusCode.OK,
+        """{"id":215,"profissionalId":9,"subcategoriaId":3,"nome":"Design","descricao":"Site","atendimento":"Online","tipoPreco":"Fixo","precoBase":234.00,"ativo":true,"nomeProfissional":"Ana","categoria":"Marketing","subcategoria":"Design","mediaAvaliacoes":4.5,"totalAvaliacoes":12}"""));
+}))
+{
+    var serviceDetail = await client.GetServicoPublicoAsync(215);
+    Check(serviceDetail.Categoria == "Marketing" && serviceDetail.MediaAvaliacoes == 4.5 &&
+        serviceDetail.TotalAvaliacoes == 12, "detalhe e avaliação agregada desserializados");
+}
+using (var client = Client((request, _) =>
+{
+    Check(request.RequestUri?.AbsolutePath == "/api/v1/agendamentos/12" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "detalhe Cliente usa participante autenticado");
+    return Task.FromResult(Response(HttpStatusCode.OK, bookingJson));
+}))
+    Check((await client.GetAgendamentoAsync(cliente, 12)).ProfissionalNome == "Ana",
+        "detalhe Cliente lê profissional real");
+using (var client = Client(async (request, _) =>
+{
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath ==
+        "/api/v1/agendamentos/12/avaliacao" &&
+        body.RootElement.GetProperty("nota").GetInt32() == 5 &&
+        !body.RootElement.TryGetProperty("profissionalId", out var ignoredOwner),
+        "avaliação não envia ID do profissional");
+    return Response(HttpStatusCode.NoContent);
+}))
+    await client.AvaliarAsync(cliente, 12, new AvaliacaoRequest(5, "Bom atendimento"));
+using (var client = Client(async (request, _) =>
+{
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(request.Method == HttpMethod.Put && request.RequestUri?.AbsolutePath == "/api/v1/perfil" &&
+        body.RootElement.GetProperty("nome").GetString() == "Maria Atualizada" &&
+        !body.RootElement.TryGetProperty("email", out var ignoredEmail) &&
+        !body.RootElement.TryGetProperty("usuarioId", out var ignoredUser),
+        "edição de perfil envia somente campos permitidos");
+    return Response(HttpStatusCode.NoContent);
+}))
+    await client.AtualizarPerfilAsync(cliente, new PerfilRequest("Maria Atualizada", "11999999999"));
+using (var client = Client((request, _) =>
+{
+    Check(request.Method == HttpMethod.Put && request.RequestUri?.AbsolutePath == "/api/v1/perfil/senha" &&
+        request.Headers.Authorization?.Parameter == cliente.Jwt, "troca de senha autenticada");
+    return Task.FromResult(Response(HttpStatusCode.NoContent));
+}))
+    await client.AlterarSenhaAsync(cliente, new SenhaRequest("atual1234", "nova12345", "nova12345"));
+using (var client = Client((request, _) =>
+{
+    Check(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath ==
+        "/api/v1/notificacoes/7/ler" && request.Headers.Authorization?.Parameter == cliente.Jwt,
+        "leitura de notificação própria");
+    return Task.FromResult(Response(HttpStatusCode.NoContent));
+}))
+    await client.LerNotificacaoAsync(cliente, 7);
+using (var client = Client(async (request, _) =>
+{
+    using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync());
+    Check(request.Method == HttpMethod.Post && request.RequestUri?.AbsolutePath == "/api/v1/suporte" &&
+        body.RootElement.GetProperty("assunto").GetString() == "Dúvida" &&
+        !body.RootElement.TryGetProperty("usuarioId", out var ignoredSupportOwner),
+        "suporte usa JWT sem ID de proprietário");
+    return Response(HttpStatusCode.NoContent);
+}))
+    await client.EnviarSuporteAsync(cliente, new SuporteRequest("Dúvida", "Dúvida", "Mensagem"));
+var forbiddenClient = ClientSession();
+using (var client = Client((_, _) => Task.FromResult(Response(HttpStatusCode.Forbidden))))
+{
+    try { await client.ListarMeusServicosAsync(forbiddenClient); throw new Exception("Cliente acessou serviços profissionais"); }
+    catch (ApiException ex) { Check(ex.StatusCode == HttpStatusCode.Forbidden && forbiddenClient.Jwt != "",
+        "Cliente recebe 403 em recurso Profissional"); }
+}
+cliente.UpdateName("Maria Atualizada");
+Check(cliente.Nome == "Maria Atualizada", "nome da sessão atualizado após perfil");
+cliente.Clear();
+Check(cliente.Jwt == "" && cliente.Perfil == "" && cliente.Id == 0, "logout Cliente limpa a sessão");
+
 IEnumerable<Control> Descendants(Control control) => control.Controls.Cast<Control>()
     .SelectMany(child => new[] { child }.Concat(Descendants(child)));
 Exception? formError = null;
@@ -440,6 +655,39 @@ var formThread = new Thread(() =>
         CheckFooter(detail, "DetalheAgendamentoForm");
         Check(Descendants(appointments).OfType<DataGridView>().Single().RowTemplate.Height == 42,
             "grades de Agendamentos, Serviços e Locais usam mesma altura de linha");
+        var clientSession = ClientSession();
+        using var clientMain = new ClienteMainForm(clientSession, formApi);
+        var menuLabels = Descendants(clientMain).OfType<Button>().Select(x => x.Text).ToHashSet();
+        Check(new[] { "Buscar serviços", "Meus agendamentos", "Avaliações", "Meu perfil",
+            "Notificações", "Suporte", "Sair" }.All(menuLabels.Contains) &&
+            !menuLabels.Contains("Locais"), "painel Cliente tem navegação própria");
+        using var clientCatalog = new BuscarServicosForm(clientSession, formApi);
+        Check(Descendants(clientCatalog).OfType<ComboBox>().Count() == 3 &&
+            Descendants(clientCatalog).OfType<TextBox>().Count() == 2,
+            "busca Cliente oferece texto, profissional, categoria, subcategoria e modalidade");
+        using var clientBookings = new ClienteAgendamentosForm(clientSession, formApi);
+        var sampleService = JsonSerializer.Deserialize<CatalogoServicoResponse>(
+            """{"id":215,"profissionalId":9,"subcategoriaId":3,"nome":"Design","descricao":"Site","atendimento":"Domicilio","tipoPreco":"Fixo","precoBase":234.00,"ativo":true,"nomeProfissional":"Ana","categoria":"Marketing","subcategoria":"Design"}""", json)!;
+        using var newBooking = new NovoAgendamentoForm(clientSession, formApi, sampleService);
+        using var evaluation = new AvaliacaoForm(clientSession, formApi,
+            JsonSerializer.Deserialize<AgendamentoResponse>(bookingJson, json)!);
+        using var clientDetail = new ClienteDetalheAgendamentoForm(clientSession, formApi, 12);
+        using var clientProfile = new ClientePerfilForm(clientSession, formApi);
+        using var clientNotifications = new ClienteNotificacoesForm(clientSession, formApi);
+        using var clientSupport = new ClienteSuporteForm(clientSession, formApi);
+        Check(Descendants(clientBookings).OfType<DataGridView>().Single().Columns["Servico"] is not null &&
+            Descendants(clientDetail).OfType<Button>().Any(x => x.Text == "Confirmar conclusão") &&
+            Descendants(clientProfile).OfType<TextBox>().Any(x => x.ReadOnly) &&
+            Descendants(clientNotifications).OfType<Button>().Any(x => x.Text == "Marcar como lida") &&
+            Descendants(clientSupport).OfType<Button>().Any(x => x.Text == "Enviar solicitação"),
+            "Forms Cliente expõem ações e campos esperados");
+        Check(Descendants(newBooking).OfType<TextBox>().Any(x => x.AccessibleName == "CEP") &&
+            Descendants(evaluation).OfType<NumericUpDown>().Single().Minimum == 1,
+            "reserva domiciliar e avaliação usam campos próprios");
+        foreach (var page in new Form[] { clientCatalog, clientBookings, clientDetail, clientProfile,
+            clientNotifications, clientSupport, newBooking, evaluation }) CheckFooter(page, page.GetType().Name);
+        try { using var denied = new ClienteMainForm(formSession, formApi); throw new Exception("Perfil incorreto aceito"); }
+        catch (ArgumentException) { Check(true, "painel Cliente rejeita sessão Profissional"); }
     }
     catch (Exception ex) { formError = ex; }
 });

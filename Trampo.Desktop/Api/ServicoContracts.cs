@@ -18,3 +18,8 @@ internal sealed record ServicoRequest(
 
 internal sealed record ServicoCriadoResponse(int Id);
 internal sealed record RemocaoServicoResponse(int Id, string Resultado);
+internal sealed record CatalogoServicoResponse(int Id, int ProfissionalId, int SubcategoriaId,
+    string Nome, string? Descricao, string Atendimento, string TipoPreco, decimal? PrecoBase,
+    bool Ativo, string? NomeProfissional, string? Categoria, string? Subcategoria,
+    double? MediaAvaliacoes = null, int TotalAvaliacoes = 0);
+internal sealed record AgendaResponse(int ServicoId, DateOnly Data, IReadOnlyList<TimeSpan> Horarios);

@@ -28,7 +28,15 @@ internal sealed class TrampoApiClient : IDisposable
     {
         _http = http;
     }
-    public Task<UserSession> SignInProfessionalAsync(string email, string senha) => ExecuteAsync(async () =>
+    public async Task<UserSession> SignInProfessionalAsync(string email, string senha)
+    {
+        var session = await SignInAsync(email, senha);
+        if (string.Equals(session.Perfil, "profissional", StringComparison.OrdinalIgnoreCase)) return session;
+        session.Clear();
+        throw new ApiException("Esta operação exige perfil Profissional.");
+    }
+
+    public Task<UserSession> SignInAsync(string email, string senha) => ExecuteAsync(async () =>
     {
         using var loginResponse = await _http.PostAsJsonAsync(
             "api/v1/auth/login", new LoginRequest(email, senha), JsonOptions);
@@ -47,10 +55,11 @@ internal sealed class TrampoApiClient : IDisposable
             string.IsNullOrWhiteSpace(usuario.Tipo))
             throw new ApiException("A API retornou um perfil inválido.");
 
-        if (!string.Equals(usuario.Tipo, "profissional", StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(usuario.Tipo, "profissional", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(usuario.Tipo, "cliente", StringComparison.OrdinalIgnoreCase))
             throw new ApiException(string.Equals(usuario.Tipo, "admin", StringComparison.OrdinalIgnoreCase)
-                ? "Administradores devem acessar o TRAMPO pela Web."
-                : "O aplicativo Desktop é destinado a profissionais.");
+                ? "Este perfil administrativo deve utilizar a aplicação Web."
+                : "Este perfil não é suportado no aplicativo Desktop.");
 
         var session = new UserSession();
         session.Start(login.AccessToken, usuario.Id, usuario.Nome, usuario.Tipo);
@@ -84,6 +93,145 @@ internal sealed class TrampoApiClient : IDisposable
             EnsureSuccess(response);
             return await response.Content.ReadFromJsonAsync<ServicoResumoResponse>(JsonOptions);
         });
+
+    public Task<IReadOnlyList<CatalogoServicoResponse>> BuscarServicosAsync(int pagina, string? busca,
+        string? atendimento, int? categoriaId = null, int? subcategoriaId = null,
+        string? profissional = null) => ExecuteAsync<IReadOnlyList<CatalogoServicoResponse>>(async () =>
+    {
+        var query = $"api/v1/servicos?pagina={pagina}&tamanho=20";
+        if (!string.IsNullOrWhiteSpace(busca)) query += "&busca=" + Uri.EscapeDataString(busca.Trim());
+        if (!string.IsNullOrWhiteSpace(atendimento)) query += "&atendimento=" + Uri.EscapeDataString(atendimento);
+        if (categoriaId.HasValue) query += "&categoriaId=" + categoriaId.Value;
+        if (subcategoriaId.HasValue) query += "&subcategoriaId=" + subcategoriaId.Value;
+        if (!string.IsNullOrWhiteSpace(profissional))
+            query += "&profissional=" + Uri.EscapeDataString(profissional.Trim());
+        using var response = await _http.GetAsync(query);
+        EnsureSuccess(response);
+        return await response.Content.ReadFromJsonAsync<List<CatalogoServicoResponse>>(JsonOptions)
+            ?? throw new ApiException("A API retornou um catálogo inválido.");
+    });
+
+    public Task<CatalogoServicoResponse> GetServicoPublicoAsync(int id) => ExecuteAsync(async () =>
+    {
+        using var response = await _http.GetAsync($"api/v1/servicos/{id}");
+        EnsureSuccess(response);
+        return await response.Content.ReadFromJsonAsync<CatalogoServicoResponse>(JsonOptions)
+            ?? throw new ApiException("A API retornou um serviço inválido.");
+    });
+
+    public Task<AgendaResponse> ConsultarAgendaAsync(UserSession session, int servicoId, DateOnly data) =>
+        ExecuteAsync(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                $"api/v1/servicos/{servicoId}/agenda?data={data:yyyy-MM-dd}");
+            using var response = await SendAuthorizedAsync(request, session);
+            return await response.Content.ReadFromJsonAsync<AgendaResponse>(JsonOptions)
+                ?? throw new ApiException("A API retornou uma agenda inválida.");
+        });
+
+    public Task<int> CriarAgendamentoAsync(UserSession session, CriarAgendamentoRequest dados) =>
+        ExecuteAsync(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/agendamentos")
+                { Content = JsonContent.Create(dados, options: JsonOptions) };
+            using var response = await SendAuthorizedAsync(request, session);
+            EnsureExpectedStatus(response, HttpStatusCode.Created);
+            var criado = await response.Content.ReadFromJsonAsync<RecursoCriadoResponse>(JsonOptions);
+            return criado is { Id: > 0 } ? criado.Id :
+                throw new ApiException("A API não confirmou o agendamento criado.");
+        });
+
+    public Task<IReadOnlyList<AgendamentoResponse>> GetMeusAgendamentosAsync(UserSession session) =>
+        ExecuteAsync<IReadOnlyList<AgendamentoResponse>>(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/agendamentos?visao=meus");
+            using var response = await SendAuthorizedAsync(request, session);
+            return await response.Content.ReadFromJsonAsync<List<AgendamentoResponse>>(JsonOptions)
+                ?? throw new ApiException("A API retornou uma lista de agendamentos inválida.");
+        });
+
+    public Task CancelarAgendamentoAsync(UserSession session, int id) => PostAgendamentoAsync(session, id, "cancelar");
+    public Task ConfirmarConclusaoAsync(UserSession session, int id) => PostAgendamentoAsync(session, id, "confirmar-conclusao");
+
+    public Task<EstadoAvaliacaoResponse> EstadoAvaliacaoAsync(UserSession session, int id) =>
+        ExecuteAsync(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/agendamentos/{id}/avaliacao");
+            using var response = await SendAuthorizedAsync(request, session);
+            return await response.Content.ReadFromJsonAsync<EstadoAvaliacaoResponse>(JsonOptions)
+                ?? throw new ApiException("A API retornou um estado de avaliação inválido.");
+        });
+
+    public Task AvaliarAsync(UserSession session, int id, AvaliacaoRequest dados) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/agendamentos/{id}/avaliacao")
+            { Content = JsonContent.Create(dados, options: JsonOptions) };
+        using var response = await SendAuthorizedAsync(request, session);
+        EnsureExpectedStatus(response, HttpStatusCode.NoContent);
+        return true;
+    });
+
+    public Task<PerfilResponse> GetPerfilAsync(UserSession session) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/perfil");
+        using var response = await SendAuthorizedAsync(request, session);
+        return await response.Content.ReadFromJsonAsync<PerfilResponse>(JsonOptions)
+            ?? throw new ApiException("A API retornou um perfil inválido.");
+    });
+
+    public Task AtualizarPerfilAsync(UserSession session, PerfilRequest dados) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/perfil")
+            { Content = JsonContent.Create(dados, options: JsonOptions) };
+        using var response = await SendAuthorizedAsync(request, session);
+        EnsureExpectedStatus(response, HttpStatusCode.NoContent);
+        return true;
+    });
+
+    public Task AlterarSenhaAsync(UserSession session, SenhaRequest dados) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, "api/v1/perfil/senha")
+            { Content = JsonContent.Create(dados, options: JsonOptions) };
+        using var response = await SendAuthorizedAsync(request, session);
+        EnsureExpectedStatus(response, HttpStatusCode.NoContent);
+        return true;
+    });
+
+    public Task<IReadOnlyList<NotificacaoResponse>> GetNotificacoesAsync(UserSession session, int pagina = 1) =>
+        ExecuteAsync<IReadOnlyList<NotificacaoResponse>>(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get,
+                $"api/v1/notificacoes?pagina={pagina}&tamanho=20");
+            using var response = await SendAuthorizedAsync(request, session);
+            return await response.Content.ReadFromJsonAsync<List<NotificacaoResponse>>(JsonOptions)
+                ?? throw new ApiException("A API retornou notificações inválidas.");
+        });
+
+    public Task LerNotificacaoAsync(UserSession session, int id) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/notificacoes/{id}/ler");
+        using var response = await SendAuthorizedAsync(request, session);
+        EnsureExpectedStatus(response, HttpStatusCode.NoContent);
+        return true;
+    });
+
+    public Task<IReadOnlyList<ChamadoSuporteResponse>> GetChamadosAsync(UserSession session) =>
+        ExecuteAsync<IReadOnlyList<ChamadoSuporteResponse>>(async () =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/suporte");
+            using var response = await SendAuthorizedAsync(request, session);
+            return await response.Content.ReadFromJsonAsync<List<ChamadoSuporteResponse>>(JsonOptions)
+                ?? throw new ApiException("A API retornou chamados inválidos.");
+        });
+
+    public Task EnviarSuporteAsync(UserSession session, SuporteRequest dados) => ExecuteAsync(async () =>
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/suporte")
+            { Content = JsonContent.Create(dados, options: JsonOptions) };
+        using var response = await SendAuthorizedAsync(request, session);
+        EnsureExpectedStatus(response, HttpStatusCode.NoContent);
+        return true;
+    });
 
     public Task ConfirmarAgendamentoAsync(UserSession session, int id) =>
         PostAgendamentoAsync(session, id, "confirmar");

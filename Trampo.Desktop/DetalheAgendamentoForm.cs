@@ -159,11 +159,11 @@ internal sealed class DetalheAgendamentoForm : Form
         rows.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         _body.Controls.Add(rows);
 
-        AddField(rows, "Serviço", servico is null ? $"#{item.ServicoId}" : $"{servico.Nome} (cadastro atual)");
-        AddField(rows, "Cliente", "Nome não disponibilizado pela API");
+        AddField(rows, "Serviço", item.ServicoNome ?? servico?.Nome ?? "Serviço não informado");
+        AddField(rows, "Cliente", item.ClienteNome ?? "Cliente não informado");
         AddField(rows, "Data e horário", $"{item.Data:dd/MM/yyyy} às {item.Hora.ToString(@"hh\:mm")}");
-        if (servico is not null)
-            AddField(rows, "Modalidade", $"{servico.Atendimento} (cadastro atual)");
+        if (!string.IsNullOrWhiteSpace(item.Atendimento))
+            AddField(rows, "Modalidade", item.Atendimento == "Domicilio" ? "Domicílio" : item.Atendimento);
         AddField(rows, "Status", AgendamentoStatus.Text(item.Status), AgendamentoStatus.StatusColor(item.Status));
         if (!string.IsNullOrWhiteSpace(item.Descricao))
             AddField(rows, "Descrição", item.Descricao);

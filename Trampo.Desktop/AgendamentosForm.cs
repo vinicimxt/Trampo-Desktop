@@ -92,7 +92,7 @@ internal sealed class AgendamentosForm : Form
         _grid.DefaultCellStyle.Padding = new Padding(7, 0, 7, 0);
         _grid.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(250, 249, 255);
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Id", HeaderText = "ID", FillWeight = 12 });
-        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "ServicoId", HeaderText = "Serviço ID", FillWeight = 22 });
+        _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Servico", HeaderText = "Serviço", FillWeight = 28 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Data", HeaderText = "Data", FillWeight = 24 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Hora", HeaderText = "Horário", FillWeight = 18 });
         _grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "Status", HeaderText = "Status", FillWeight = 28 });
@@ -148,7 +148,7 @@ internal sealed class AgendamentosForm : Form
             _grid.Rows.Clear();
             foreach (var item in items)
             {
-                var rowIndex = _grid.Rows.Add(item.Id, item.ServicoId,
+                var rowIndex = _grid.Rows.Add(item.Id, item.ServicoNome ?? "Serviço não informado",
                     item.Data.ToString("dd/MM/yyyy"), item.Hora.ToString(@"hh\:mm"), AgendamentoStatus.Text(item.Status));
                 _grid.Rows[rowIndex].Cells["Status"].Style.ForeColor = AgendamentoStatus.StatusColor(item.Status);
                 _grid.Rows[rowIndex].Tag = item.Id;

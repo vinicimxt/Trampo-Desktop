@@ -11,7 +11,9 @@ internal sealed record AgendamentoResponse(
     string? EnderecoCliente,
     decimal? ValorFinal,
     string OrigemValorFinal,
-    EnderecoAtendimentoResponse? EnderecoAtendimento);
+    EnderecoAtendimentoResponse? EnderecoAtendimento,
+    string? ServicoNome = null, string? ProfissionalNome = null, string? ClienteNome = null,
+    string? Atendimento = null);
 
 internal sealed record EnderecoAtendimentoResponse(
     string? CEP,
@@ -32,3 +34,8 @@ internal sealed record ServicoResumoResponse(
     decimal? PrecoBase);
 
 internal sealed record FinalizarRequest(decimal ValorFinal);
+internal sealed record CriarAgendamentoRequest(int ServicoId, DateOnly Data, TimeSpan Hora,
+    string? Descricao, EnderecoRequest? Endereco);
+internal sealed record RecursoCriadoResponse(int Id);
+internal sealed record EstadoAvaliacaoResponse(bool PodeAvaliar, bool JaAvaliado);
+internal sealed record AvaliacaoRequest(int Nota, string? Comentario);
