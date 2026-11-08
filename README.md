@@ -76,7 +76,7 @@ O projeto `Tests/Trampo.Desktop.Tests` contém verificações não visuais de co
 dotnet run --project Tests/Trampo.Desktop.Tests/Trampo.Desktop.Tests.csproj --configuration Release --no-build
 ```
 
-Esse comando usa respostas simuladas e não exige a API em execução. O runner também possui modos de smoke test contra uma API real, que dependem de credenciais e dados de teste próprios. O workflow em `.github/workflows/desktop.yml` executa restore, build e os testes não visuais em `windows-latest` a cada push e pull request.
+Esse comando usa respostas simuladas e não exige a API em execução. Na estabilização de 08/11/2026, o runner passou em 124 verificações. Os modos `--smoke-final`, `--smoke` e `--smoke-local` também passaram contra a API local: o primeiro consulta dados profissionais; os demais criam, editam e removem somente fixtures de serviço/local próprias. Defina `TRAMPO_API_BASE_URL`, `TRAMPO_SMOKE_EMAIL` e `TRAMPO_SMOKE_PASSWORD` apenas no processo de teste; `--smoke` exige `TRAMPO_SMOKE_INACTIVE_ID` de uma fixture própria e os dois modos de mutação exigem `TRAMPO_SMOKE_TAG`. Não grave credenciais no repositório. O workflow em `.github/workflows/desktop.yml` executa restore, build e os testes não visuais em `windows-latest` a cada push e pull request. A validação visual dos Forms permanece pendente nesta execução.
 
 ## Estrutura do repositório
 
@@ -93,4 +93,4 @@ Trampo.Desktop.slnx        Solução .NET
 
 ## Escopo
 
-O Desktop não oferece área Admin, pagamentos, chat, mapas ou funcionamento offline. A média e a quantidade de avaliações vêm da API; comentários individuais, lista de avaliações já enviadas, perfil público completo e texto de resposta de suporte ainda não têm contrato REST suficiente. O Desktop não inventa esses dados. O preço atual de um serviço não é apresentado como preço histórico contratado. Para arquitetura completa, configuração do banco, API e demais interfaces, consulte o [repositório principal TRAMPO](https://github.com/vinicimxt/Trampo).
+O Desktop não oferece área Admin, pagamentos, chat, mapas ou funcionamento offline. A média e a quantidade de avaliações vêm da API. A API agora expõe comentários públicos por serviço e avaliações recebidas ao Profissional, mas o Desktop não possui telas para exibi-los; lista de avaliações enviadas, perfil público completo e texto de resposta de suporte continuam fora do contrato consumido pelo Desktop. O Desktop não inventa esses dados. O preço atual de um serviço não é apresentado como preço histórico contratado. Para arquitetura completa, configuração do banco, API e demais interfaces, consulte o [repositório principal TRAMPO](https://github.com/vinicimxt/Trampo).
