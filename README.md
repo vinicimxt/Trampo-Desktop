@@ -71,6 +71,8 @@ Substitua o endereço do exemplo pela URL real da sua API. A variável altera ap
 
 ## Ambiente online
 
+O [executavel Windows de previa](https://github.com/vinicimxt/Trampo-Desktop/releases/tag/v2026.11.23-online-preview) esta disponivel para download na release do projeto. Ele nao possui assinatura digital de editor; leia as ressalvas antes de executar.
+
 A API publicada esta em `https://trampo.tryasp.net/`. Na raiz do repositorio, execute no PowerShell:
 
 ```powershell
