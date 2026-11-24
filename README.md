@@ -48,12 +48,13 @@ O cliente HTTP está em `Trampo.Desktop/Api/TrampoApiClient.cs`. Após o login, 
 
 ## Executar localmente
 
-1. Prepare e inicie o backend seguindo o README do [TRAMPO Web/API](https://github.com/vinicimxt/Trampo). O Desktop espera a API em `http://localhost:5165/` por padrão.
+1. Prepare e inicie o backend seguindo o README do [TRAMPO Web/API](https://github.com/vinicimxt/Trampo). Para desenvolvimento local, defina `TRAMPO_API_BASE_URL=http://localhost:5165/`. O build Debug usa essa URL por padrao; o build Release usa a API online quando a variavel nao esta definida.
 2. Em um terminal PowerShell, na raiz deste repositório, restaure, compile e execute:
 
    ```powershell
    dotnet restore Trampo.Desktop.slnx
    dotnet build Trampo.Desktop.slnx --configuration Release --no-restore
+   $env:TRAMPO_API_BASE_URL="http://localhost:5165/"
    dotnet run --project Trampo.Desktop/Trampo.Desktop.csproj --configuration Release --no-build
    ```
 
@@ -67,6 +68,32 @@ dotnet run --project Trampo.Desktop/Trampo.Desktop.csproj --configuration Releas
 ```
 
 Substitua o endereço do exemplo pela URL real da sua API. A variável altera apenas a conexão do Desktop; a configuração do SQL Server permanece no backend.
+
+## Ambiente online
+
+A API publicada esta em `https://trampo.tryasp.net/`. Na raiz do repositorio, execute no PowerShell:
+
+```powershell
+$env:TRAMPO_API_BASE_URL="https://trampo.tryasp.net/"
+dotnet run --project Trampo.Desktop\Trampo.Desktop.csproj
+```
+
+Para voltar ao ambiente local no mesmo terminal:
+
+```powershell
+$env:TRAMPO_API_BASE_URL="http://localhost:5165/"
+dotnet run --project Trampo.Desktop\Trampo.Desktop.csproj
+```
+
+A URL e lida quando o processo inicia. Trocar a variavel de ambiente nao exige alteracao no codigo nem recompilacao; sem a variavel, o build Debug usa `http://localhost:5165/` e o build Release usa `https://trampo.tryasp.net/`.
+
+Para validar login, perfil, categorias, catalogo e agendamentos online pelo cliente HTTP real, use uma conta ficticia Cliente e defina `TRAMPO_SMOKE_EMAIL` e `TRAMPO_SMOKE_PASSWORD` somente no processo de teste. Depois execute:
+
+```powershell
+dotnet run --project Tests/Trampo.Desktop.Tests/Trampo.Desktop.Tests.csproj --configuration Release -- --smoke-cliente-online
+```
+
+O smoke online faz somente consultas; nao cria, altera nem remove servicos ou agendamentos.
 
 ## Testes e integração contínua
 

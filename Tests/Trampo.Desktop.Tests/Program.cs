@@ -26,6 +26,37 @@ if (args.Contains("--preview"))
     finally { previewSession.Clear(); }
     return;
 }
+if (args.Contains("--smoke-cliente-online"))
+{
+    string email = Environment.GetEnvironmentVariable("TRAMPO_SMOKE_EMAIL") ?? throw new Exception("E-mail de fixture ausente.");
+    string password = Environment.GetEnvironmentVariable("TRAMPO_SMOKE_PASSWORD") ?? throw new Exception("Senha de fixture ausente.");
+    using var api = new TrampoApiClient();
+    var onlineSession = await api.SignInAsync(email, password);
+    try
+    {
+        if (!string.Equals(onlineSession.Perfil, "cliente", StringComparison.OrdinalIgnoreCase))
+            throw new Exception("A conta online nao tem perfil Cliente.");
+        Console.WriteLine("SMOKE ONLINE: login e /auth/me confirmaram Cliente.");
+        var onlineCategories = await api.ListarCategoriasAsync();
+        Console.WriteLine($"SMOKE ONLINE: categorias carregadas ({onlineCategories.Count}).");
+        var services = await api.BuscarServicosAsync(1, null, null);
+        Console.WriteLine($"SMOKE ONLINE: catalogo carregado ({services.Count}).");
+        if (services.Count > 0)
+        {
+            var detail = await api.GetServicoPublicoAsync(services[0].Id);
+            if (detail.Id != services[0].Id) throw new Exception("Detalhe de servico divergente.");
+            Console.WriteLine("SMOKE ONLINE: detalhe de servico carregado.");
+        }
+        var appointments = await api.GetMeusAgendamentosAsync(onlineSession);
+        Console.WriteLine($"SMOKE ONLINE: agendamentos carregados ({appointments.Count}).");
+        await api.GetPerfilAsync(onlineSession);
+        Console.WriteLine("SMOKE ONLINE: perfil carregado.");
+    }
+    finally { onlineSession.Clear(); }
+    if (onlineSession.Jwt != "") throw new Exception("Logout nao limpou o token.");
+    Console.WriteLine("SMOKE ONLINE: logout limpou JWT em memoria.");
+    return;
+}
 if (args.Contains("--smoke-final"))
 {
     string email = Environment.GetEnvironmentVariable("TRAMPO_SMOKE_EMAIL") ?? throw new Exception("E-mail de fixture ausente.");

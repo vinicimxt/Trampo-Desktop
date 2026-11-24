@@ -8,7 +8,11 @@ namespace Trampo.Desktop.Api;
 
 internal sealed class TrampoApiClient : IDisposable
 {
+#if DEBUG
     private const string DefaultBaseUrl = "http://localhost:5165/";
+#else
+    private const string DefaultBaseUrl = "https://trampo.tryasp.net/";
+#endif
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private readonly HttpClient _http;
 
